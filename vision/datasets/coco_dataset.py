@@ -1,37 +1,35 @@
+from pycocotools.coco import COCO
 import numpy as np
 import pathlib
 import cv2
 import os
-import pandas as pd
 
 
-class OpenImagesDataset:
-
+class CocoDataset:
     def __init__(self, root,
                  transform=None, target_transform=None,
                  dataset_type="train", balance_data=False):
+        self.dataset_type = dataset_type.lower()
         self.root = pathlib.Path(os.path.expanduser(root))
+        annotation_file_path = f"{self.root}/annotations/coco_annotations_{self.dataset_type}.json"
+        self.coco = COCO(annotation_file_path)
+        self.ids = list(sorted(self.coco.imgs.keys()))
+        self.anns_ids = list(sorted(self.coco.anns.keys()))
         self.transform = transform
         self.target_transform = target_transform
-        self.dataset_type = dataset_type.lower()
 
         self.data, self.class_names, self.class_dict = self._read_data()
         self.balance_data = balance_data
         self.min_image_num = -1
         if self.balance_data:
             self.data = self._balance_data()
-        self.ids = [info['image_id'] for info in self.data]
 
         self.class_stat = None
 
     def _getitem(self, index):
         image_info = self.data[index]
-        image = self._read_image(image_info['image_id'])
+        image = self._read_image(image_info['img_path'])
         boxes = image_info['boxes']
-        boxes[:, 0] *= image.shape[1]
-        boxes[:, 1] *= image.shape[0]
-        boxes[:, 2] *= image.shape[1]
-        boxes[:, 3] *= image.shape[0]
         labels = image_info['labels']
         if self.transform:
             image, boxes, labels = self.transform(image, boxes, labels)
@@ -51,26 +49,43 @@ class OpenImagesDataset:
 
     def get_image(self, index):
         image_info = self.data[index]
-        image = self._read_image(image_info['image_id'])
+        image = self._read_image(image_info['img_path'])
         if self.transform:
             image, _ = self.transform(image)
         return image
 
     def _read_data(self):
-        annotation_file = f"{self.root}/sub-{self.dataset_type}-annotations-bbox.csv"
-        annotations = pd.read_csv(annotation_file)
-        class_names = ['BACKGROUND'] + sorted(list(annotations['ClassName'].unique()))
+        big_cats_dict = self.coco.loadCats(self.coco.getCatIds())
+        class_names = [d['name'] for d in big_cats_dict]
         class_dict = {class_name: i for i, class_name in enumerate(class_names)}
+
+        pre_data = dict()
         data = []
-        for image_id, group in annotations.groupby("ImageID"):
-            boxes = group.loc[:, ["XMin", "YMin", "XMax", "YMax"]].values.astype(np.float32)
-            labels = np.array([class_dict[name] for name in group["ClassName"]])
-            data.append({
-                'image_id': image_id,
-                'boxes': boxes,
-                'labels': labels
-            })
-        return data, class_names, class_dict
+
+        for img_id in self.ids:
+            img_info = self.coco.loadImgs(img_id)
+            pre_data[img_id] = {
+                'image_id': img_id,
+                'img_path': img_info[0].get('file_name', ''),
+                'boxes': None,
+                'labels': None
+            }
+
+        for ann_id in self.anns_ids:
+            annotation = self.coco.loadAnns(ann_id)[0]
+            img_id = annotation['image_id']
+            box = np.array(annotation['bbox']).astype(np.float32)
+            if type(pre_data[img_id]['boxes']) == np.ndarray:
+                pre_data[img_id]['boxes'] = np.vstack((pre_data[img_id]['boxes'], box))
+            else:
+                pre_data[img_id]['boxes'] = np.array([box])
+
+            if type(pre_data[img_id]['labels']) == np.ndarray:
+                pre_data[img_id]['labels'] = np.append(pre_data[img_id]['labels'], annotation['category_id'])
+            else:
+                pre_data[img_id]['labels'] = np.array([annotation['category_id']])
+
+        return list(pre_data.values()), class_names, class_dict
 
     def __len__(self):
         return len(self.data)
@@ -90,8 +105,8 @@ class OpenImagesDataset:
             content.append(f"\t{class_name}: {num}")
         return "\n".join(content)
 
-    def _read_image(self, image_id):
-        image_file = self.root / self.dataset_type / f"{image_id}.jpg"
+    def _read_image(self, image_path_short):
+        image_file = self.root / f"images/{image_path_short}"
         image = cv2.imread(str(image_file))
         if image.shape[2] == 1:
             image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
@@ -113,8 +128,5 @@ class OpenImagesDataset:
             sample_image_indexes.update(sub)
         sample_data = [self.data[i] for i in sample_image_indexes]
         return sample_data
-
-
-
 
 
