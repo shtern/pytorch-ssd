@@ -34,7 +34,10 @@ parser.add_argument('--datasets', nargs='+', help='Dataset directory path')
 parser.add_argument('--validation_dataset', help='Dataset directory path')
 parser.add_argument('--balance_data', action='store_true',
                     help="Balance training data by down-sampling more frequent labels.")
-
+parser.add_argument('--split_train_test_automatically', action='store_true',
+                    help='Splitting to train and test from given train path')
+parser.add_argument('--train_test_split_ratio', default=0.8, type=float,
+                    help='Test/train split ratio')
 
 parser.add_argument('--net', default="vgg16-ssd",
                     help="The network architecture, it can be mb1-ssd, mb1-lite-ssd, mb2-ssd-lite or vgg16-ssd.")
@@ -227,25 +230,35 @@ if __name__ == '__main__':
             raise ValueError(f"Dataset type {args.dataset_type} is not supported.")
         datasets.append(dataset)
     logging.info(f"Stored labels into file {label_file}.")
-    train_dataset = ConcatDataset(datasets)
+
+    if args.split_train_test_automatically:
+        #TODO: check support for ConcatDataset, currently usign only one
+        train_size = int(args.train_test_split_ratio * len(dataset))
+        test_size = len(dataset) - train_size
+        train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, test_size])
+    else:
+        train_dataset = ConcatDataset(datasets)
+        if args.dataset_type == "voc":
+            val_dataset = VOCDataset(args.validation_dataset, transform=test_transform,
+                                     target_transform=target_transform, is_test=True)
+        elif args.dataset_type == 'open_images':
+            val_dataset = OpenImagesDataset(dataset_path,
+                                            transform=test_transform, target_transform=target_transform,
+                                            dataset_type="test")
+        elif args.dataset_type == 'coco':
+            val_dataset = CocoDataset(dataset_path,
+                                      transform=test_transform, target_transform=target_transform,
+                                      dataset_type="test")
+        else:
+            raise ValueError(f"Dataset type {args.dataset_type} is not supported.")
+
     logging.info("Train dataset size: {}".format(len(train_dataset)))
     train_loader = DataLoader(train_dataset, args.batch_size,
                               num_workers=args.num_workers,
                               shuffle=True)
     logging.info("Prepare Validation datasets.")
-    if args.dataset_type == "voc":
-        val_dataset = VOCDataset(args.validation_dataset, transform=test_transform,
-                                 target_transform=target_transform, is_test=True)
-    elif args.dataset_type == 'open_images':
-        val_dataset = OpenImagesDataset(dataset_path,
-                                        transform=test_transform, target_transform=target_transform,
-                                        dataset_type="test")
-    elif args.dataset_type == 'coco':
-        val_dataset = CocoDataset(dataset_path,
-                                        transform=test_transform, target_transform=target_transform,
-                                        dataset_type="train")  # TODO: replace train to test
-        logging.info(val_dataset)
     logging.info("validation dataset size: {}".format(len(val_dataset)))
+    logging.info(val_dataset)
 
     val_loader = DataLoader(val_dataset, args.batch_size,
                             num_workers=args.num_workers,
