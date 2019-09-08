@@ -26,7 +26,7 @@ parser.add_argument("--dataset_type", default="coco", type=str,
 parser.add_argument("--dataset", type=str, help="The root directory of the VOC dataset or Open Images dataset.")
 parser.add_argument("--label_file", type=str, help="The label file path.")
 parser.add_argument("--use_cuda", type=str2bool, default=True)
-parser.add_argument("--use_2007_metric", type=str2bool, default=True)
+parser.add_argument("--use_2007_metric", type=str2bool, default=False)  # 2007 metric recommended for voc only
 parser.add_argument("--nms_method", type=str, default="hard")
 parser.add_argument("--iou_threshold", type=float, default=0.5, help="The threshold of Intersection over Union.")
 parser.add_argument("--eval_dir", default="eval_results", type=str, help="The directory to store evaluation results.")
@@ -91,6 +91,11 @@ def compute_average_precision_per_class(num_true_cases, gt_boxes, difficult_case
         false_positive = np.zeros(len(image_ids))
         matched = set()
         for i, image_id in enumerate(image_ids):
+            try:
+                image_id = int(image_id)
+            except ValueError as v_e:
+                print(v_e)
+                continue
             box = boxes[i]
             if image_id not in gt_boxes:
                 false_positive[i] = 1
@@ -114,7 +119,7 @@ def compute_average_precision_per_class(num_true_cases, gt_boxes, difficult_case
     false_positive = false_positive.cumsum()
     precision = true_positive / (true_positive + false_positive)
     recall = true_positive / num_true_cases
-    if use_2007_metric:
+    if use_2007_metric and args.dataset_type == "voc":
         return measurements.compute_voc2007_average_precision(precision, recall)
     else:
         return measurements.compute_average_precision(precision, recall)
