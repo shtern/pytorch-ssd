@@ -5,6 +5,7 @@ from vision.ssd.mobilenetv1_ssd_lite import create_mobilenetv1_ssd_lite, create_
 from vision.ssd.squeezenet_ssd_lite import create_squeezenet_ssd_lite, create_squeezenet_ssd_lite_predictor
 from vision.datasets.voc_dataset import VOCDataset
 from vision.datasets.open_images import OpenImagesDataset
+from vision.datasets.coco_dataset import CocoDataset
 from vision.utils import box_utils, measurements
 from vision.utils.misc import str2bool, Timer
 import argparse
@@ -20,8 +21,8 @@ parser.add_argument('--net', default="vgg16-ssd",
                     help="The network architecture, it should be of mb1-ssd, mb1-ssd-lite, mb2-ssd-lite or vgg16-ssd.")
 parser.add_argument("--trained_model", type=str)
 
-parser.add_argument("--dataset_type", default="voc", type=str,
-                    help='Specify dataset type. Currently support voc and open_images.')
+parser.add_argument("--dataset_type", default="coco", type=str,
+                    help='Specify dataset type. Currently support coco, voc and open_images.')
 parser.add_argument("--dataset", type=str, help="The root directory of the VOC dataset or Open Images dataset.")
 parser.add_argument("--label_file", type=str, help="The label file path.")
 parser.add_argument("--use_cuda", type=str2bool, default=True)
@@ -129,6 +130,8 @@ if __name__ == '__main__':
         dataset = VOCDataset(args.dataset, is_test=True)
     elif args.dataset_type == 'open_images':
         dataset = OpenImagesDataset(args.dataset, dataset_type="test")
+    elif args.dataset_type == 'coco':
+        dataset = CocoDataset(args.dataset, dataset_type="train")
 
     true_case_stat, all_gb_boxes, all_difficult_cases = group_annotation_by_class(dataset)
     if args.net == 'vgg16-ssd':
@@ -191,7 +194,7 @@ if __name__ == '__main__':
                 prob_box = sub[i, 2:].numpy()
                 image_id = dataset.ids[int(sub[i, 0])]
                 print(
-                    image_id + " " + " ".join([str(v) for v in prob_box]),
+                    str(image_id) + " " + " ".join([str(v) for v in prob_box]),
                     file=f
                 )
     aps = []
