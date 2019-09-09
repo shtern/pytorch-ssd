@@ -6,10 +6,11 @@ import os
 
 
 class CocoDataset:
-    def __init__(self, root,
+    def __init__(self, root, size_multiplication=1,
                  transform=None, target_transform=None,
                  dataset_type="train", balance_data=False):
         self.dataset_type = dataset_type.lower()
+        self.size_multiplication = size_multiplication
         self.root = pathlib.Path(os.path.expanduser(root))
         annotation_file_path = f"{self.root}/annotations/coco_annotations_{self.dataset_type}.json"
         self.coco = COCO(annotation_file_path)
@@ -21,12 +22,14 @@ class CocoDataset:
         self.data, self.class_names, self.class_dict = self._read_data()
         self.balance_data = balance_data
         self.min_image_num = -1
-        if self.balance_data:
+        if self.balance_data and self.size_multiplication == 1:
             self.data = self._balance_data()
 
         self.class_stat = None
 
     def _getitem(self, index):
+        if index >= len(self.data):
+            index = np.random.randint(0, index % len(self.data) + 1)
         image_info = self.data[index]
         image = self._read_image(image_info['img_path'])
         boxes = image_info['boxes']
@@ -88,7 +91,7 @@ class CocoDataset:
         return list(pre_data.values()), class_names, class_dict
 
     def __len__(self):
-        return len(self.data)
+        return self.size_multiplication * len(self.data)
 
     def __repr__(self):
         if self.class_stat is None:
@@ -115,6 +118,8 @@ class CocoDataset:
         return image
 
     def _balance_data(self):
+        if self.size_multiplication > 1:
+            raise ValueError('Cannot balance data while having size_multiplication > 1')
         label_image_indexes = [set() for _ in range(len(self.class_names))]
         for i, image in enumerate(self.data):
             for label_id in image['labels']:

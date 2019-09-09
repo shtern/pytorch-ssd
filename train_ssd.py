@@ -218,7 +218,7 @@ if __name__ == '__main__':
             logging.info(dataset)
             num_classes = len(dataset.class_names)
         elif args.dataset_type == 'coco':
-            dataset = CocoDataset(dataset_path,
+            dataset = CocoDataset(dataset_path, size_multiplication=3,
                  transform=train_transform, target_transform=target_transform,
                  dataset_type="train", balance_data=args.balance_data)
             label_file = os.path.join(args.checkpoint_folder, "coco-labels.txt")
