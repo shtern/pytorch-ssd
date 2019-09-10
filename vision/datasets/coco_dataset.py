@@ -3,7 +3,9 @@ import numpy as np
 import pathlib
 import cv2
 import os
+import vision.utils.labelbox_to_coco as labelbox_to_coco
 
+COCO_COVERTED_PATH = 'annotations_converted_coco.json'
 
 class CocoDataset:
     def __init__(self, root, size_multiplication=1,
@@ -13,7 +15,11 @@ class CocoDataset:
         self.size_multiplication = size_multiplication
         self.root = pathlib.Path(os.path.expanduser(root))
         annotation_file_path = f"{self.root}/annotations/coco_annotations_{self.dataset_type}.json"
-        self.coco = COCO(annotation_file_path)
+        try:
+            self.coco = COCO(annotation_file_path)
+        except AssertionError:
+            labelbox_to_coco.from_json(annotation_file_path, COCO_COVERTED_PATH)
+            self.coco = COCO(COCO_COVERTED_PATH)
         self.ids = list(sorted(self.coco.imgs.keys()))
         self.anns_ids = list(sorted(self.coco.anns.keys()))
         self.transform = transform
