@@ -18,7 +18,7 @@ from shapely.geometry import Polygon
 LOGGER = logging.getLogger(__name__)
 
 
-def from_json(labeled_data, coco_output, label_format='WKT'):
+def from_json(labeled_data, coco_output, label_format='XY'):
     """Writes labelbox JSON export into MS COCO format."""
     # read labelbox JSON output
     with open(labeled_data, 'r') as file_handle:

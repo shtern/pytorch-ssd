@@ -3,6 +3,7 @@ import os
 import logging
 import sys
 import itertools
+import split_data
 
 import torch
 from torch.utils.data import DataLoader, ConcatDataset
@@ -203,6 +204,9 @@ if __name__ == '__main__':
     logging.info("Prepare training datasets.")
     datasets = []
     for dataset_path in args.datasets:
+        if args.split_train_test_automatically:
+            split_data.split_train_val_test(f"{dataset_path}/annotations/coco_annotations.json", [0.6, 0.2, 0.2])
+
         if args.dataset_type == 'voc':
             dataset = VOCDataset(dataset_path, transform=train_transform,
                                  target_transform=target_transform)
@@ -231,26 +235,20 @@ if __name__ == '__main__':
         datasets.append(dataset)
     logging.info(f"Stored labels into file {label_file}.")
 
-    if args.split_train_test_automatically:
-        #TODO: check support for ConcatDataset, currently usign only one
-        train_size = int(args.train_test_split_ratio * len(dataset))
-        test_size = len(dataset) - train_size
-        train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, test_size])
+    train_dataset = ConcatDataset(datasets)
+    if args.dataset_type == "voc":
+        val_dataset = VOCDataset(args.validation_dataset, transform=test_transform,
+                                 target_transform=target_transform, is_test=True)
+    elif args.dataset_type == 'open_images':
+        val_dataset = OpenImagesDataset(dataset_path,
+                                        transform=test_transform, target_transform=target_transform,
+                                        dataset_type="test")
+    elif args.dataset_type == 'coco':
+        val_dataset = CocoDataset(dataset_path,
+                                  transform=test_transform, target_transform=target_transform,
+                                  dataset_type="test")
     else:
-        train_dataset = ConcatDataset(datasets)
-        if args.dataset_type == "voc":
-            val_dataset = VOCDataset(args.validation_dataset, transform=test_transform,
-                                     target_transform=target_transform, is_test=True)
-        elif args.dataset_type == 'open_images':
-            val_dataset = OpenImagesDataset(dataset_path,
-                                            transform=test_transform, target_transform=target_transform,
-                                            dataset_type="test")
-        elif args.dataset_type == 'coco':
-            val_dataset = CocoDataset(dataset_path,
-                                      transform=test_transform, target_transform=target_transform,
-                                      dataset_type="test")
-        else:
-            raise ValueError(f"Dataset type {args.dataset_type} is not supported.")
+        raise ValueError(f"Dataset type {args.dataset_type} is not supported.")
 
     logging.info("Train dataset size: {}".format(len(train_dataset)))
     train_loader = DataLoader(train_dataset, args.batch_size,

@@ -69,7 +69,6 @@ class CocoDataset:
         class_dict = {class_name: i for i, class_name in enumerate(class_names)}
 
         pre_data = dict()
-        data = []
 
         for img_id in self.ids:
             img_info = self.coco.loadImgs(img_id)
