@@ -6,6 +6,7 @@ https://github.com/Labelbox/labelbox-python/blob/master/labelbox/exporters/coco_
 
 import datetime as dt
 import json
+import os
 import logging
 from typing import Any, Dict
 
@@ -18,10 +19,10 @@ from shapely.geometry import Polygon
 LOGGER = logging.getLogger(__name__)
 
 
-def from_json(labeled_data, coco_output, label_format='XY'):
+def from_json(labeled_data, coco_output, label_format='XY', download_data=False, data_path=''):
     """Writes labelbox JSON export into MS COCO format."""
     # read labelbox JSON output
-    with open(labeled_data, 'r') as file_handle:
+    with open(os.path.expanduser(labeled_data), 'r') as file_handle:
         label_data = json.loads(file_handle.read())
 
     # setup COCO dataset container and info
@@ -30,7 +31,8 @@ def from_json(labeled_data, coco_output, label_format='XY'):
     for data in label_data:
         # Download and get image name
         try:
-            add_label(coco, data['ID'], data['Labeled Data'], data['Label'], label_format)
+            add_label(coco, data['ID'], data['Labeled Data'], data['Label'], label_format,
+                      download_data, data_path)
         except requests.exceptions.MissingSchema as exc:
             LOGGER.warning(exc)
             continue
@@ -38,7 +40,7 @@ def from_json(labeled_data, coco_output, label_format='XY'):
             LOGGER.warning('Failed to fetch image from %s, skipping', data['Labeled Data'])
             continue
 
-    with open(coco_output, 'w+') as file_handle:
+    with open(os.path.expanduser(coco_output), 'w+') as file_handle:
         file_handle.write(json.dumps(coco))
 
 
@@ -68,7 +70,7 @@ def make_coco_metadata(project_name: str, created_by: str) -> Dict[str, Any]:
 
 def add_label(
         coco: Dict[str, Any], label_id: str, image_url: str,
-        labels: Dict[str, Any], label_format: str):
+        labels: Dict[str, Any], label_format: str, download_data=False, data_path=''):
     """Incrementally updates COCO export data structure with a new label.
     Args:
         coco: The current COCO export, will be incrementally updated by this method.
@@ -77,6 +79,8 @@ def add_label(
         labels: Labelbox formatted labels to use for generating annotation
         label_format: Format of the labeled data. Valid options are: "WKT" and
                       "XY", default is "WKT".
+        download_data: Should download data from internet or try to find it locally
+        data_path: Path where to take image data from
     Returns:
         The updated COCO export represented as a dictionary.
     """
@@ -88,10 +92,19 @@ def add_label(
         "coco_url": image_url,
         "date_captured": None,
     }
-    response = requests.get(image_url, stream=True, timeout=10.0)
-    response.raw.decode_content = True
-    image['width'], image['height'] = Image.open(response.raw).size
 
+    if download_data:
+        response = requests.get(image_url, stream=True, timeout=10.0)
+        response.raw.decode_content = True
+        image_raw = Image.open(response.raw)
+    else:
+        name = data_path + '/'.join(image['file_name'].split('/')[3:])
+        try:
+            image_raw = Image.open(os.path.expanduser(name))
+        except FileNotFoundError:
+            return
+
+    image['width'], image['height'] = image_raw.size
     coco['images'].append(image)
 
     # remove classification labels (Skip, etc...)
