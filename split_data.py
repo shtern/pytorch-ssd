@@ -2,6 +2,7 @@ import json
 import pathlib
 import os
 import numpy as np
+import vision.utils.labelbox_to_coco as l2c
 
 JSON_EXTENSION = '.json'
 KEY_ID = 'id'
@@ -47,4 +48,30 @@ def split_train_val_test(path_to_json, ratio):
             write_split(source, images, all_annotations, path_to_json, dataset_type)
 
 
+def merge_annotations(output, *args):
+    if len(args) <= 1:
+        raise ValueError('not enough files passed')
+
+    final = None
+    for path in args:
+        with open(pathlib.Path(os.path.expanduser(path))) as file:
+            raw_json = json.load(file)
+            if not final:
+                final = raw_json
+            else:
+                final['images'].extend(raw_json['images'])
+                final['annotations'].extend(raw_json['annotations'])
+
+    with open(pathlib.Path(os.path.expanduser(output)), 'w+') as file:
+        json.dump(final, file)
+
+
+def test():
+    l2c.from_json('~/data/more_wounds/annotations/coco_annotations_labelbox.json',
+                  '~/data/more_wounds/annotations/coco_annotations.json',
+                  data_path='~/data/more_wounds/images/')
+    merge_annotations('merged_annotations.json',
+                      '~/data/wounds_dataset/annotations/coco_annotations.json',
+                      '~/data/more_wounds/annotations/coco_annotations.json')
+test()
 

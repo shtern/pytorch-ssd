@@ -45,11 +45,15 @@ def main():
         orig_img = cv2.cvtColor(orig_img, cv2.COLOR_BGR2RGB)
         for geom in boxes:
             cv2.rectangle(img, tuple(geom[:-2]), tuple(geom[2:]), (0, 255, 0), 6)
+        cv2.namedWindow('augmented', cv2.WINDOW_NORMAL)
         cv2.imshow('augmented', img)
+        cv2.resizeWindow('augmented', 600, 600)
 
         for geom in orig_boxes:
             cv2.rectangle(orig_img, tuple(geom[:-2]), tuple(geom[2:]), (0, 255, 0), 6)
+        cv2.namedWindow('original', cv2.WINDOW_NORMAL)
         cv2.imshow('original', orig_img)
+        cv2.resizeWindow('original', 600, 600)
         if cv2.waitKey(3000) & 0xFF == ord('q'):
             break
 

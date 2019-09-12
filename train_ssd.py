@@ -8,6 +8,7 @@ import split_data
 import torch
 from torch.utils.data import DataLoader, ConcatDataset
 from torch.optim.lr_scheduler import CosineAnnealingLR, MultiStepLR
+import vision.utils.labelbox_to_coco as labelbox_to_coco
 
 from vision.utils.misc import str2bool, Timer, freeze_net_layers, store_labels
 from vision.ssd.ssd import MatchPrior
@@ -37,8 +38,6 @@ parser.add_argument('--balance_data', action='store_true',
                     help="Balance training data by down-sampling more frequent labels.")
 parser.add_argument('--split_train_test_automatically', action='store_true',
                     help='Splitting to train and test from given train path')
-parser.add_argument('--train_test_split_ratio', default=0.8, type=float,
-                    help='Test/train split ratio')
 
 parser.add_argument('--net', default="vgg16-ssd",
                     help="The network architecture, it can be mb1-ssd, mb1-lite-ssd, mb2-ssd-lite or vgg16-ssd.")
@@ -205,7 +204,12 @@ if __name__ == '__main__':
     datasets = []
     for dataset_path in args.datasets:
         if args.split_train_test_automatically:
-            split_data.split_train_val_test(f"{dataset_path}/annotations/coco_annotations.json", [0.6, 0.2, 0.2])
+            try:
+                split_data.split_train_val_test(f"{dataset_path}/annotations/coco_annotations.json", [0.6, 0.2, 0.2])
+            except BaseException:
+                labelbox_to_coco.from_json(f"{dataset_path}/annotations/coco_annotations.json",
+                                           f"{dataset_path}/annotations/coco_annotations_fixed.json",
+                                           data_path=f"{dataset_path}/images/")
 
         if args.dataset_type == 'voc':
             dataset = VOCDataset(dataset_path, transform=train_transform,

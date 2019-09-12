@@ -136,7 +136,7 @@ if __name__ == '__main__':
     elif args.dataset_type == 'open_images':
         dataset = OpenImagesDataset(args.dataset, dataset_type="test")
     elif args.dataset_type == 'coco':
-        dataset = CocoDataset(args.dataset, dataset_type="train")
+        dataset = CocoDataset(args.dataset, dataset_type="test")
 
     true_case_stat, all_gb_boxes, all_difficult_cases = group_annotation_by_class(dataset)
     if args.net == 'vgg16-ssd':

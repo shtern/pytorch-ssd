@@ -10,13 +10,28 @@ import os
 import logging
 from typing import Any, Dict
 
-from PIL import Image
+from PIL import Image, ExifTags
 import requests
 from shapely import wkt
 from shapely.geometry import Polygon
 
+##temp
+import numpy as np
+import cv2
+from matplotlib import pyplot as plt
+from matplotlib import patches
+
+
+def gen_next_id():
+    n = 0
+    while True:
+        yield n
+        n += 1
+
 
 LOGGER = logging.getLogger(__name__)
+ENCODING_DICT = dict()
+ENCODING_GENERATOR = gen_next_id()
 
 
 def from_json(labeled_data, coco_output, label_format='XY', download_data=False, data_path=''):
@@ -68,6 +83,15 @@ def make_coco_metadata(project_name: str, created_by: str) -> Dict[str, Any]:
     }
 
 
+def encode_label(label):
+    if label in ENCODING_DICT:
+        return ENCODING_DICT[label]
+    else:
+        next_id = next(ENCODING_GENERATOR)
+        ENCODING_DICT[label] = next_id
+        return next_id
+
+
 def add_label(
         coco: Dict[str, Any], label_id: str, image_url: str,
         labels: Dict[str, Any], label_format: str, download_data=False, data_path=''):
@@ -84,9 +108,10 @@ def add_label(
     Returns:
         The updated COCO export represented as a dictionary.
     """
+    if type(label_id) == str:
+        label_id = encode_label(label_id)
     image = {
         "id": label_id,
-        "file_name": image_url,
         "license": None,
         "flickr_url": image_url,
         "coco_url": image_url,
@@ -98,9 +123,11 @@ def add_label(
         response.raw.decode_content = True
         image_raw = Image.open(response.raw)
     else:
-        name = data_path + '/'.join(image['file_name'].split('/')[3:])
+        name = '/'.join(image['coco_url'].split('/')[3:])
+        image["file_name"] = name
         try:
-            image_raw = Image.open(os.path.expanduser(name))
+            #fix_orientation(os.path.expanduser(data_path + name))
+            image_raw = Image.open(os.path.expanduser(data_path + name))
         except FileNotFoundError:
             return
 
@@ -130,6 +157,38 @@ def add_label(
         polygons = _get_polygons(label_format, label_data)
         _append_polygons_as_annotations(coco, image, category_id, polygons)
 
+        #TEMP
+        # img = cv2.imread(os.path.expanduser(data_path+name))
+        # img2 = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        #
+        # fig, ax = plt.subplots(1)
+        # for polygon in polygons:
+        #     bounds = np.array([polygon.bounds[0], polygon.bounds[1],
+        #              polygon.bounds[2] - polygon.bounds[0],
+        #              polygon.bounds[3] - polygon.bounds[1]], dtype=int)
+        #     width = bounds[2] - bounds[0]
+        #     height = bounds[3] - bounds[1]
+        #     bottom_left = (bounds[0], bounds[1])
+        #     # Create a Rectangle patch
+        #     # rect = patches.Rectangle(bottom_left, width, height, linewidth=1, edgecolor='r', facecolor='none')
+        #     #
+        #     # # Add the patch to the Axes
+        #     # ax.add_patch(rect)
+        #     ax.scatter(polygon.bounds[0], polygon.bounds[1])
+        #     ax.scatter(polygon.bounds[0], polygon.bounds[3])
+        #     ax.scatter(polygon.bounds[2], polygon.bounds[1])
+        #     ax.scatter(polygon.bounds[2], polygon.bounds[3])
+        #
+        #     cv2.rectangle(img2, tuple(bounds[:-2]), tuple(bounds[2:]), (0, 255, 0), 2)
+        #     plt.plot(*polygon.exterior.xy)
+        #
+        #
+        #
+        # ax.imshow(img)
+        # plt.show()
+        # print('s')
+        # # cv2.imshow('test', img2)
+
 
 def _append_polygons_as_annotations(coco, image, category_id, polygons):
     "Adds `polygons` as annotations in the `coco` export"
@@ -144,9 +203,11 @@ def _append_polygons_as_annotations(coco, image, category_id, polygons):
             "category_id": category_id,
             "segmentation": [segmentation],
             "area": polygon.area,  # float
-            "bbox": [polygon.bounds[0], polygon.bounds[1],
-                     polygon.bounds[2] - polygon.bounds[0],
-                     polygon.bounds[3] - polygon.bounds[1]],
+            "bbox": [polygon.bounds[0], polygon.bounds[1], polygon.bounds[2], polygon.bounds[3]],
+                    # We keep Shirel's data format
+                    # For COCO refer to this
+                    #polygon.bounds[2] - polygon.bounds[0],
+                    #polygon.bounds[3] - polygon.bounds[1]],
             "iscrowd": 0
         }
 
@@ -183,3 +244,29 @@ def _get_polygons(label_format, label_data):
         raise exc
 
     return polygons
+
+
+def fix_orientation(filepath):
+    flag = False
+    try:
+        image = Image.open(filepath)
+        for orientation in ExifTags.TAGS.keys():
+            if ExifTags.TAGS[orientation] == 'Orientation':
+                break
+        exif = dict(image._getexif().items())
+
+        if exif[orientation] == 3:
+            flag = True
+            image = image.rotate(180, expand=True)
+        elif exif[orientation] == 6:
+            flag = True
+            image = image.rotate(270, expand=True)
+        elif exif[orientation] == 8:
+            flag = True
+            image = image.rotate(90, expand=True)
+        image.save(filepath)
+        image.close()
+        return flag
+    except (AttributeError, KeyError, IndexError):
+        # cases: image don't have getexif
+        return False
