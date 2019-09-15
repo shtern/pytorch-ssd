@@ -95,5 +95,4 @@ def test():
     merge_annotations('merged_annotations.json',
                       '~/data/wounds_dataset/annotations/coco_annotations.json',
                       '~/data/more_wounds/annotations/coco_annotations_train.json')
-test()
 
