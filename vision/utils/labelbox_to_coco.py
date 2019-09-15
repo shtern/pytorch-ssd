@@ -132,7 +132,6 @@ def add_label(
             return
 
     image['width'], image['height'] = image_raw.size
-    coco['images'].append(image)
 
     # remove classification labels (Skip, etc...)
     if not callable(getattr(labels, 'keys', None)):
@@ -155,7 +154,11 @@ def add_label(
             coco['categories'].append(category)
 
         polygons = _get_polygons(label_format, label_data)
-        _append_polygons_as_annotations(coco, image, category_id, polygons)
+        if polygons and len(polygons) > 0:
+            _append_polygons_as_annotations(coco, image, category_id, polygons)
+            coco['images'].append(image)
+        else:
+            continue
 
         #TEMP
         # img = cv2.imread(os.path.expanduser(data_path+name))

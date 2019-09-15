@@ -7,6 +7,7 @@ import vision.utils.labelbox_to_coco as labelbox_to_coco
 
 COCO_COVERTED_PATH = 'annotations_converted_coco.json'
 
+
 class CocoDataset:
     def __init__(self, root, size_multiplication=1,
                  transform=None, target_transform=None,
