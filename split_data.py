@@ -11,6 +11,13 @@ KEY_IMAGES = 'images'
 KEY_ANNOTATIONS = 'annotations'
 
 
+def relabel_ids(start):
+    n = start
+    while True:
+        yield n
+        n += 1
+
+
 def write_split(source, images, annotations, path_to_json, dataset_type):
     name = os.path.splitext(path_to_json)[0]  # getting filename only
     name += '_' + dataset_type + JSON_EXTENSION
@@ -52,13 +59,28 @@ def merge_annotations(output, *args):
     if len(args) <= 1:
         raise ValueError('not enough files passed')
 
+    start_image_id = 0
+    start_annotation_id = 0
+    encode_dict = dict()
     final = None
     for path in args:
         with open(pathlib.Path(os.path.expanduser(path))) as file:
             raw_json = json.load(file)
             if not final:
                 final = raw_json
+                start_image_id = max(image['id'] for image in final['images'])
+                start_annotation_id = max(annotation['id'] for annotation in final['annotations'])
+                relabel_images = relabel_ids(start_image_id+1)
+                relabel_annotations = relabel_ids(start_annotation_id+1)
             else:
+                for image in raw_json['images']:
+                    new_id = next(relabel_images)
+                    encode_dict[image['id']] = new_id
+                    image['id'] = new_id
+                for annotation in raw_json['annotations']:
+                    annotation['id'] = next(relabel_annotations)
+                    annotation['image_id'] = encode_dict.get(annotation['image_id'], annotation['image_id'])
+
                 final['images'].extend(raw_json['images'])
                 final['annotations'].extend(raw_json['annotations'])
 
@@ -67,11 +89,11 @@ def merge_annotations(output, *args):
 
 
 def test():
-    l2c.from_json('~/data/more_wounds/annotations/coco_annotations_labelbox.json',
-                  '~/data/more_wounds/annotations/coco_annotations.json',
+    l2c.from_json('~/data/more_wounds/annotations/coco_annotations_lblbx.json',
+                  '~/data/more_wounds/annotations/coco_annotations_train.json',
                   data_path='~/data/more_wounds/images/')
     merge_annotations('merged_annotations.json',
                       '~/data/wounds_dataset/annotations/coco_annotations.json',
-                      '~/data/more_wounds/annotations/coco_annotations.json')
+                      '~/data/more_wounds/annotations/coco_annotations_train.json')
 test()
 
