@@ -116,7 +116,7 @@ class CocoDataset:
 
     def _read_image(self, image_path_short):
         image_file = self.root / f"images/{image_path_short}"
-        image = cv2.imread(str(image_file))
+        image = cv2.imread(str(image_file), cv2.IMREAD_IGNORE_ORIENTATION | cv2.IMREAD_COLOR)
         if image.shape[2] == 1:
             image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
         else:
