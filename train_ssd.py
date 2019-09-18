@@ -9,6 +9,7 @@ import torch
 from torch.utils.data import DataLoader, ConcatDataset
 from torch.optim.lr_scheduler import CosineAnnealingLR, MultiStepLR
 import vision.utils.labelbox_to_coco as labelbox_to_coco
+from ax.service.managed_loop import optimize
 
 from vision.utils.misc import str2bool, Timer, freeze_net_layers, store_labels
 from vision.ssd.ssd import MatchPrior
@@ -171,6 +172,32 @@ def test(loader, net, criterion, device):
     return running_loss / num, running_regression_loss / num, running_classification_loss / num
 
 
+def train_evaluate(parametrization):
+    optimizer = torch.optim.SGD(params, lr=parametrization['lr'], momentum=parametrization['momentum'],
+                                weight_decay=parametrization['weight_decay'])
+
+    if args.scheduler == 'multi-step':
+        logging.info("Uses MultiStepLR scheduler.")
+        milestones = [int(v.strip()) for v in args.milestones.split(",")]
+        scheduler = MultiStepLR(optimizer, milestones=milestones,
+                                                     gamma=0.1, last_epoch=last_epoch)
+    elif args.scheduler == 'cosine':
+        logging.info("Uses CosineAnnealingLR scheduler.")
+        scheduler = CosineAnnealingLR(optimizer, args.t_max, last_epoch=last_epoch)
+    else:
+        logging.fatal(f"Unsupported Scheduler: {args.scheduler}.")
+        parser.print_help(sys.stderr)
+        sys.exit(1)
+
+    for epoch in range(last_epoch + 1, parametrization.get('num_epochs', 100)):
+        train(train_loader, net, criterion, optimizer,
+              device=DEVICE, debug_steps=args.debug_steps, epoch=epoch)
+        scheduler.step()
+
+    val_loss, val_regression_loss, val_classification_loss = test(val_loader, net, criterion, DEVICE)
+    return val_loss
+
+
 if __name__ == '__main__':
     timer = Timer()
 
@@ -324,37 +351,47 @@ if __name__ == '__main__':
                              center_variance=0.1, size_variance=0.2, device=DEVICE)
     # optimizer = torch.optim.SGD(params, lr=args.lr, momentum=args.momentum,
     #                             weight_decay=args.weight_decay)
-    optimizer = torch.optim.Adam(params, lr=args.lr, weight_decay=args.weight_decay)
-    logging.info(f"Learning rate: {args.lr}, Base net learning rate: {base_net_lr}, "
-                 + f"Extra Layers learning rate: {extra_layers_lr}.")
+    # logging.info(f"Learning rate: {args.lr}, Base net learning rate: {base_net_lr}, "
+    #              + f"Extra Layers learning rate: {extra_layers_lr}.")
+    #
+    # if args.scheduler == 'multi-step':
+    #     logging.info("Uses MultiStepLR scheduler.")
+    #     milestones = [int(v.strip()) for v in args.milestones.split(",")]
+    #     scheduler = MultiStepLR(optimizer, milestones=milestones,
+    #                                                  gamma=0.1, last_epoch=last_epoch)
+    # elif args.scheduler == 'cosine':
+    #     logging.info("Uses CosineAnnealingLR scheduler.")
+    #     scheduler = CosineAnnealingLR(optimizer, args.t_max, last_epoch=last_epoch)
+    # else:
+    #     logging.fatal(f"Unsupported Scheduler: {args.scheduler}.")
+    #     parser.print_help(sys.stderr)
+    #     sys.exit(1)
+    #
+    # logging.info(f"Start training from epoch {last_epoch + 1}.")
 
-    if args.scheduler == 'multi-step':
-        logging.info("Uses MultiStepLR scheduler.")
-        milestones = [int(v.strip()) for v in args.milestones.split(",")]
-        scheduler = MultiStepLR(optimizer, milestones=milestones,
-                                                     gamma=0.1, last_epoch=last_epoch)
-    elif args.scheduler == 'cosine':
-        logging.info("Uses CosineAnnealingLR scheduler.")
-        scheduler = CosineAnnealingLR(optimizer, args.t_max, last_epoch=last_epoch)
-    else:
-        logging.fatal(f"Unsupported Scheduler: {args.scheduler}.")
-        parser.print_help(sys.stderr)
-        sys.exit(1)
+    best_parameters, values, experiment, model = optimize(
+        parameters=[
+            {"name": "lr", "type": "range", "bounds": [1e-6, 0.4], "log_scale": True},
+            {"name": "momentum", "type": "range", "bounds": [0.0, 1.0]},
+            {"name": "weight_decay", "type": "range", "bounds": [1e-5, 1e-3]}
+        ],
+        evaluation_function=train_evaluate,
+        objective_name='accuracy',
+    )
+    # for epoch in range(last_epoch + 1, args.num_epochs):
+    #     train(train_loader, net, criterion, optimizer,
+    #           device=DEVICE, debug_steps=args.debug_steps, epoch=epoch)
+    #     scheduler.step()
+    #
+    #     if epoch % args.validation_epochs == 0 or epoch == args.num_epochs - 1:
+    #         val_loss, val_regression_loss, val_classification_loss = test(val_loader, net, criterion, DEVICE)
+    #         logging.info(
+    #             f"Epoch: {epoch}, " +
+    #             f"Validation Loss: {val_loss:.4f}, " +
+    #             f"Validation Regression Loss {val_regression_loss:.4f}, " +
+    #             f"Validation Classification Loss: {val_classification_loss:.4f}"
+    #         )
+    #         model_path = os.path.join(args.checkpoint_folder, f"{args.net}-Epoch-{epoch}-Loss-{val_loss}.pth")
+    #         net.save(model_path)
+    #         logging.info(f"Saved model {model_path}")
 
-    logging.info(f"Start training from epoch {last_epoch + 1}.")
-    for epoch in range(last_epoch + 1, args.num_epochs):
-        train(train_loader, net, criterion, optimizer,
-              device=DEVICE, debug_steps=args.debug_steps, epoch=epoch)
-        scheduler.step()
-
-        if epoch % args.validation_epochs == 0 or epoch == args.num_epochs - 1:
-            val_loss, val_regression_loss, val_classification_loss = test(val_loader, net, criterion, DEVICE)
-            logging.info(
-                f"Epoch: {epoch}, " +
-                f"Validation Loss: {val_loss:.4f}, " +
-                f"Validation Regression Loss {val_regression_loss:.4f}, " +
-                f"Validation Classification Loss: {val_classification_loss:.4f}"
-            )
-            model_path = os.path.join(args.checkpoint_folder, f"{args.net}-Epoch-{epoch}-Loss-{val_loss}.pth")
-            net.save(model_path)
-            logging.info(f"Saved model {model_path}")
