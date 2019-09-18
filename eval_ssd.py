@@ -13,6 +13,7 @@ import pathlib
 import numpy as np
 import logging
 import sys
+import cv2
 from vision.ssd.mobilenet_v2_ssd_lite import create_mobilenetv2_ssd_lite, create_mobilenetv2_ssd_lite_predictor
 
 
@@ -174,13 +175,54 @@ if __name__ == '__main__':
         sys.exit(1)
 
     results = []
+
+    low_prob_count = 0
+    high_prob_count = 0
+    low_iou_count = 0
+    high_iou_count = 0
+    pics_threshold = 20
+
     for i in range(len(dataset)):
         print("process image", i)
         timer.start("Load Image")
-        image = dataset.get_image(i)
+        image, gt_boxes, gt_labels = dataset[i]
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         print("Load Image: {:4f} seconds.".format(timer.end("Load Image")))
         timer.start("Predict")
         boxes, labels, probs = predictor.predict(image)
+
+        for box in gt_boxes:
+            cv2.rectangle(image, (box[0], box[1]), (box[2], box[3]), (255, 0, 0), 4)
+        is_high_prob = len(probs[probs > 0.4])
+        target = zip(boxes, probs[probs > 0.4]) if is_high_prob else zip(boxes[:2], probs[:2])
+        for box, prob in target:
+            cv2.rectangle(image, (box[0], box[1]), (box[2], box[3]), (0, 0, 255), 4)
+            cv2.putText(image, str(prob.item()),
+                        (box[0] + 20, box[1] + 40),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        1,  # font scale
+                        (0, 0, 255),
+                        2)
+        ious = box_utils.iou_of(boxes[:len(gt_boxes)], torch.tensor(gt_boxes))
+        max_iou = torch.max(ious).item()
+        cv2.putText(image, str(max_iou), (0, 50),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1,  # font scale
+                    (255, 255, 255),
+                    2)
+
+        if 0 < max_iou < 0.1 and low_iou_count < pics_threshold:
+            cv2.imwrite(f'{eval_path}/low_iou_img{low_iou_count}.jpg', image)
+            low_iou_count += 1
+        elif 0.9 < max_iou <= 1 and high_iou_count < pics_threshold:
+            cv2.imwrite(f'{eval_path}/high_iou_img{high_iou_count}.jpg', image)
+            high_iou_count += 1
+        elif is_high_prob and high_prob_count < pics_threshold:
+            cv2.imwrite(f'{eval_path}/high_prob_img{high_prob_count}.jpg', image)
+            high_prob_count += 1
+        elif not is_high_prob and low_prob_count < pics_threshold:
+            cv2.imwrite(f'{eval_path}/low_prob_img{low_prob_count}.jpg', image)
+            low_prob_count += 1
+
         print("Prediction: {:4f} seconds.".format(timer.end("Predict")))
         indexes = torch.ones(labels.size(0), 1, dtype=torch.float32) * i
         results.append(torch.cat([
