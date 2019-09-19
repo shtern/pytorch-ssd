@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader, ConcatDataset
 from torch.optim.lr_scheduler import CosineAnnealingLR, MultiStepLR
 import vision.utils.labelbox_to_coco as labelbox_to_coco
 from ax.service.managed_loop import optimize
+from vision.utils.freeze_mode import FreezeMode
 
 from vision.utils.misc import str2bool, Timer, freeze_net_layers, store_labels
 from vision.ssd.ssd import MatchPrior
@@ -106,6 +107,7 @@ logging.basicConfig(stream=sys.stdout, level=logging.INFO,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 args = parser.parse_args()
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() and args.use_cuda else "cpu")
+AX_TEST = True
 
 if args.use_cuda and torch.cuda.is_available():
     torch.backends.cudnn.benchmark = True
@@ -172,7 +174,9 @@ def test(loader, net, criterion, device):
     return running_loss / num, running_regression_loss / num, running_classification_loss / num
 
 
-def train_evaluate(parametrization, ax_test=True):
+def train_evaluate(parametrization):
+    global freeze_mode
+    params = init_parameters(freeze_mode)
     criterion = MultiboxLoss(config.priors, iou_threshold=0.5, neg_pos_ratio=3,
                              center_variance=0.1, size_variance=0.2, device=DEVICE)
     optimizer = torch.optim.SGD(params, lr=parametrization['lr'], momentum=parametrization['momentum'],
@@ -194,7 +198,7 @@ def train_evaluate(parametrization, ax_test=True):
               device=DEVICE, debug_steps=args.debug_steps, epoch=epoch)
         scheduler.step()
 
-        if not ax_test and (epoch % args.validation_epochs == 0 or epoch == args.num_epochs - 1):
+        if not AX_TEST and (epoch % args.validation_epochs == 0 or epoch == args.num_epochs - 1):
             val_loss, val_regression_loss, val_classification_loss = test(val_loader, net, criterion, DEVICE)
             logging.info(
                 f"Epoch: {epoch}, " +
@@ -208,6 +212,50 @@ def train_evaluate(parametrization, ax_test=True):
 
     val_loss, val_regression_loss, val_classification_loss = test(val_loader, net, criterion, DEVICE)
     return val_loss
+
+
+def init_parameters(freeze_mode: FreezeMode):
+    if freeze_mode == FreezeMode.base:
+        params = itertools.chain(net.source_layer_add_ons.parameters(), net.extras.parameters(),
+                                 net.regression_headers.parameters(), net.classification_headers.parameters())
+        params = [
+            {'params': itertools.chain(
+                net.source_layer_add_ons.parameters(),
+                net.extras.parameters()
+            ), 'lr': extra_layers_lr},
+            {'params': itertools.chain(
+                net.regression_headers.parameters(),
+                net.classification_headers.parameters()
+            )}
+        ]
+    elif freeze_mode == FreezeMode.all:
+        params = itertools.chain(net.regression_headers.parameters(), net.classification_headers.parameters())
+        logging.info("Freeze all the layers except prediction heads.")
+    else:
+        params = [
+            {'params': net.base_net.parameters(), 'lr': base_net_lr},
+            {'params': itertools.chain(
+                net.source_layer_add_ons.parameters(),
+                net.extras.parameters()
+            ), 'lr': extra_layers_lr},
+            {'params': itertools.chain(
+                net.regression_headers.parameters(),
+                net.classification_headers.parameters()
+            )}
+        ]
+    return params
+
+
+def freeze_layers_if_needed(freeze_mode: FreezeMode):
+    global net
+    if freeze_mode == FreezeMode.base:
+        logging.info("Freeze base net.")
+        freeze_net_layers(net.base_net)
+    elif freeze_mode == FreezeMode.all:
+        logging.info("Freeze all the layers except prediction heads.")
+        freeze_net_layers(net.base_net)
+        freeze_net_layers(net.source_layer_add_ons)
+        freeze_net_layers(net.extras)
 
 
 if __name__ == '__main__':
@@ -311,39 +359,15 @@ if __name__ == '__main__':
 
     base_net_lr = args.base_net_lr if args.base_net_lr is not None else args.lr
     extra_layers_lr = args.extra_layers_lr if args.extra_layers_lr is not None else args.lr
+
+    freeze_mode = FreezeMode.none
     if args.freeze_base_net:
-        logging.info("Freeze base net.")
-        freeze_net_layers(net.base_net)
-        params = itertools.chain(net.source_layer_add_ons.parameters(), net.extras.parameters(),
-                                 net.regression_headers.parameters(), net.classification_headers.parameters())
-        params = [
-            {'params': itertools.chain(
-                net.source_layer_add_ons.parameters(),
-                net.extras.parameters()
-            ), 'lr': extra_layers_lr},
-            {'params': itertools.chain(
-                net.regression_headers.parameters(),
-                net.classification_headers.parameters()
-            )}
-        ]
+        freeze_mode = FreezeMode.base
     elif args.freeze_net:
-        freeze_net_layers(net.base_net)
-        freeze_net_layers(net.source_layer_add_ons)
-        freeze_net_layers(net.extras)
-        params = itertools.chain(net.regression_headers.parameters(), net.classification_headers.parameters())
-        logging.info("Freeze all the layers except prediction heads.")
-    else:
-        params = [
-            {'params': net.base_net.parameters(), 'lr': base_net_lr},
-            {'params': itertools.chain(
-                net.source_layer_add_ons.parameters(),
-                net.extras.parameters()
-            ), 'lr': extra_layers_lr},
-            {'params': itertools.chain(
-                net.regression_headers.parameters(),
-                net.classification_headers.parameters()
-            )}
-        ]
+        freeze_mode = FreezeMode.all
+
+    freeze_layers_if_needed(freeze_mode)
+
 
     timer.start("Load Model")
     if args.resume:
