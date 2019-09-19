@@ -194,7 +194,7 @@ def train_evaluate(parametrization, ax_test=True):
               device=DEVICE, debug_steps=args.debug_steps, epoch=epoch)
         scheduler.step()
 
-        if not ax_test and epoch % args.validation_epochs == 0 or epoch == args.num_epochs - 1:
+        if not ax_test and (epoch % args.validation_epochs == 0 or epoch == args.num_epochs - 1):
             val_loss, val_regression_loss, val_classification_loss = test(val_loader, net, criterion, DEVICE)
             logging.info(
                 f"Epoch: {epoch}, " +
