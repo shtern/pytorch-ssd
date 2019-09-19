@@ -94,7 +94,8 @@ def encode_label(label):
 
 def add_label(
         coco: Dict[str, Any], label_id: str, image_url: str,
-        labels: Dict[str, Any], label_format: str, download_data=False, data_path=''):
+        labels: Dict[str, Any], label_format: str, download_data=False, data_path='',
+        not_found_stat_path='not_found_files.txt'):
     """Incrementally updates COCO export data structure with a new label.
     Args:
         coco: The current COCO export, will be incrementally updated by this method.
@@ -105,6 +106,7 @@ def add_label(
                       "XY", default is "WKT".
         download_data: Should download data from internet or try to find it locally
         data_path: Path where to take image data from
+        not_found_stat_path: Path to log not found files
     Returns:
         The updated COCO export represented as a dictionary.
     """
@@ -129,6 +131,8 @@ def add_label(
             #fix_orientation(os.path.expanduser(data_path + name))
             image_raw = Image.open(os.path.expanduser(data_path + name))
         except FileNotFoundError:
+            with open(os.path.expanduser(data_path+not_found_stat_path), 'a') as file:
+                file.write("\n"+data_path + name)
             return
 
     image['width'], image['height'] = image_raw.size
