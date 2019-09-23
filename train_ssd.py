@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader, ConcatDataset
 from torch.optim.lr_scheduler import CosineAnnealingLR, MultiStepLR
 import vision.utils.labelbox_to_coco as labelbox_to_coco
 from ax.service.managed_loop import optimize
-from vision.utils.freeze_mode import FreezeMode
+from vision.utils.enums import FreezeMode
 
 from vision.utils.misc import str2bool, Timer, freeze_net_layers, store_labels
 from vision.ssd.ssd import MatchPrior

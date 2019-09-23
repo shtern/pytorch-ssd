@@ -6,9 +6,13 @@ https://github.com/Labelbox/labelbox-python/blob/master/labelbox/exporters/coco_
 
 import datetime as dt
 import json
+import pathlib
 import os
 import logging
+import boto3
+from vision.utils.enums import DownloadMode
 from typing import Any, Dict
+from tqdm import tqdm
 
 from PIL import Image, ExifTags
 import requests
@@ -34,7 +38,8 @@ ENCODING_DICT = dict()
 ENCODING_GENERATOR = gen_next_id()
 
 
-def from_json(labeled_data, coco_output, label_format='XY', download_data=False, data_path=''):
+def from_json(labeled_data, coco_output, label_format='XY', download_data_mode=DownloadMode.s3,
+              bucket_name='io.healthy.spot.data', data_path=''):
     """Writes labelbox JSON export into MS COCO format."""
     # read labelbox JSON output
     with open(os.path.expanduser(labeled_data), 'r') as file_handle:
@@ -43,11 +48,11 @@ def from_json(labeled_data, coco_output, label_format='XY', download_data=False,
     # setup COCO dataset container and info
     coco = make_coco_metadata(label_data[0]['Project Name'], label_data[0]['Created By'],)
 
-    for data in label_data:
+    for data in tqdm(label_data):
         # Download and get image name
         try:
             add_label(coco, data['ID'], data['Labeled Data'], data['Label'], label_format,
-                      download_data, data_path)
+                      download_data_mode, bucket_name, data_path)
         except requests.exceptions.MissingSchema as exc:
             LOGGER.warning(exc)
             continue
@@ -94,14 +99,18 @@ def encode_label(label):
 
 def add_label(
         coco: Dict[str, Any], label_id: str, image_url: str,
-        labels: Dict[str, Any], label_format: str, download_data=False, data_path='',
-        not_found_stat_path='not_found_files.txt'):
+        labels: Dict[str, Any], label_format: str,
+        download_data_mode=DownloadMode.s3,
+        bucket_name='io.healthy.spot.data',
+        data_path='', not_found_stat_path='not_found_files.txt'):
     """Incrementally updates COCO export data structure with a new label.
     Args:
         coco: The current COCO export, will be incrementally updated by this method.
         label_id: ID for the instance to write
         image_url: URL to download image file from
         labels: Labelbox formatted labels to use for generating annotation
+        download_data_mode: Mode for getting data (locally preloaded/AWS S3/Web)
+        bucket_name: Bucket name for AWS S3 data downloading mode
         label_format: Format of the labeled data. Valid options are: "WKT" and
                       "XY", default is "WKT".
         download_data: Should download data from internet or try to find it locally
@@ -120,13 +129,20 @@ def add_label(
         "date_captured": None,
     }
 
-    if download_data:
+    if download_data_mode == DownloadMode.web:
         response = requests.get(image_url, stream=True, timeout=10.0)
         response.raw.decode_content = True
         image_raw = Image.open(response.raw)
     else:
         name = '/'.join(image['coco_url'].split('/')[3:])
         image["file_name"] = name
+
+        if download_data_mode == DownloadMode.s3 and not os.path.exists(name):
+            s3 = boto3.client('s3')
+            path = pathlib.Path(name)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            s3.download_file(bucket_name, name, name)
+
         try:
             #fix_orientation(os.path.expanduser(data_path + name))
             image_raw = Image.open(os.path.expanduser(data_path + name))
