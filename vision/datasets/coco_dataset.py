@@ -3,6 +3,7 @@ import numpy as np
 import pathlib
 import cv2
 import os
+import copy
 import vision.utils.labelbox_to_coco as labelbox_to_coco
 
 COCO_COVERTED_PATH = 'annotations_converted_coco.json'
@@ -39,8 +40,8 @@ class CocoDataset:
             index = np.random.randint(0, index % len(self.data) + 1)
         image_info = self.data[index]
         image = self._read_image(image_info['img_path'])
-        boxes = image_info['boxes']
-        labels = image_info['labels']
+        boxes = copy.copy(image_info['boxes'])
+        labels = copy.copy(image_info['labels'])
         if self.transform:
             image, boxes, labels = self.transform(image, boxes, labels)
         if self.target_transform:
