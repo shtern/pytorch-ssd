@@ -136,16 +136,17 @@ def add_label(
     else:
         name = '/'.join(image['coco_url'].split('/')[3:])
         image["file_name"] = name
+        full_path = os.path.expanduser(data_path + name)
 
-        if download_data_mode == DownloadMode.s3 and not os.path.exists(name):
+        if download_data_mode == DownloadMode.s3 and not os.path.exists(full_path):
             s3 = boto3.client('s3')
-            path = pathlib.Path(name)
+            path = pathlib.Path(full_path)
             path.parent.mkdir(parents=True, exist_ok=True)
-            s3.download_file(bucket_name, name, name)
+            s3.download_file(bucket_name, name, full_path)
 
         try:
             #fix_orientation(os.path.expanduser(data_path + name))
-            image_raw = Image.open(os.path.expanduser(data_path + name))
+            image_raw = Image.open(os.path.expanduser(full_path))
         except FileNotFoundError:
             with open(os.path.expanduser(data_path+not_found_stat_path), 'a') as file:
                 file.write("\n"+data_path + name)
