@@ -64,6 +64,7 @@ parser.add_argument('--base_net_lr', default=None, type=float,
                     help='initial learning rate for base net.')
 parser.add_argument('--extra_layers_lr', default=None, type=float,
                     help='initial learning rate for the layers not in base net and prediction heads.')
+parser.add_argument('--ax_test', default=False, type=bool, help='if added, runs AX test instead of plain training')
 
 
 # Params for loading pretrained basenet or checkpoints.
@@ -107,7 +108,7 @@ logging.basicConfig(stream=sys.stdout, level=logging.INFO,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 args = parser.parse_args()
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() and args.use_cuda else "cpu")
-AX_TEST = True
+AX_TEST = args.ax_test
 
 if args.use_cuda and torch.cuda.is_available():
     torch.backends.cudnn.benchmark = True
@@ -383,16 +384,22 @@ if __name__ == '__main__':
 
     net.to(DEVICE)
 
-    best_parameters, values, experiment, model = optimize(
-        parameters=[
-            {"name": "lr", "type": "range", "bounds": [1e-6, 0.4], "log_scale": True},
-            {"name": "momentum", "type": "range", "bounds": [0.0, 1.0]},
-            {"name": "weight_decay", "type": "range", "bounds": [1e-5, 1e-3]}
-        ],
-        evaluation_function=train_evaluate,
-        objective_name='accuracy',
-    )
+    if AX_TEST:
+        best_parameters, values, experiment, model = optimize(
+            parameters=[
+                {"name": "lr", "type": "range", "bounds": [1e-6, 0.4], "log_scale": True},
+                {"name": "momentum", "type": "range", "bounds": [0.0, 1.0]},
+                {"name": "weight_decay", "type": "range", "bounds": [1e-5, 1e-3]}
+            ],
+            evaluation_function=train_evaluate,
+            objective_name='accuracy',
+        )
 
-    with open('model_results.txt', "w") as f:
-        f.write(f"{best_parameters}\n{values}\n{experiment}\n{model}")
+        with open('model_results.txt', "w") as f:
+            f.write(f"{best_parameters}\n{values}\n{experiment}\n{model}")
+    else:
+        parametrization = {'lr': extra_layers_lr,
+                           'momentum': args.momentum,
+                           'weight_decay': args.weight_decay}
+        train_evaluate(parametrization)
 
